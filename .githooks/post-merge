@@ -1,0 +1,21 @@
+#!/bin/sh
+# Clear Next.js cache after merges/pulls so the dev server picks up fresh CSS.
+# If the dev server is running, kill it, clear cache, and restart it.
+
+PIDS=$(lsof -ti:3000 2>/dev/null)
+
+if [ -n "$PIDS" ]; then
+  echo "Restarting Next.js dev server..."
+  echo "$PIDS" | xargs kill 2>/dev/null
+  # Wait until port 3000 is fully free and process has exited
+  while lsof -ti:3000 >/dev/null 2>&1; do sleep 0.2; done
+  sleep 0.5
+  rm -rf .next 2>/dev/null
+  nohup npm run dev >> .next-dev.log 2>&1 &
+  # Wait for server to be ready before returning
+  while ! curl -s -o /dev/null http://localhost:3000 2>/dev/null; do sleep 0.5; done
+  echo "Dev server restarted on :3000"
+else
+  rm -rf .next
+  echo "Cleared .next cache"
+fi

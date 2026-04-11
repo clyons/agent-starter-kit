@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env.local
+.env.cli
+.env.*.local
+
+# Agent artifacts
+.context/
+
+# Node
+node_modules/
+.next-dev.log
+
+# OS
+.DS_Store
