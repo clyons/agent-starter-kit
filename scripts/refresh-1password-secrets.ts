@@ -15,7 +15,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { access, appendFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -117,6 +117,19 @@ async function ensureFileExists(path: string): Promise<void> {
   }
 }
 
+async function readEnvFileIfPresent(path: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function escapeForSedReplacement(s: string): string {
+  // Order matters: escape \ first, then the | delimiter and & (matched-text reference)
+  return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/&/g, '\\&')
+}
+
 async function upsertEnvFile(
   path: string,
   updates: Record<string, string>,
@@ -124,28 +137,33 @@ async function upsertEnvFile(
   await ensureFileExists(path)
   const original = await readFile(path, 'utf8')
   const lines = original === '' ? [] : original.split('\n')
-  const updated = new Set<string>()
-  const added: string[] = []
+  const presentKeys = new Set(
+    lines
+      .map((line) => line.match(/^([A-Za-z_][A-Za-z0-9_]*)=/)?.[1])
+      .filter((v): v is string => Boolean(v)),
+  )
 
-  const nextLines = lines.map((line) => {
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=/)
-    if (!match) return line
-    const key = match[1]
-    if (!(key in updates)) return line
-    updated.add(key)
-    return `${key}=${formatEnvValue(updates[key])}`
-  })
+  const updated: string[] = []
+  const added: string[] = []
+  let appendedBefore = false
 
   for (const [key, value] of Object.entries(updates)) {
-    if (updated.has(key)) continue
-    added.push(key)
-    nextLines.push(`${key}=${formatEnvValue(value)}`)
+    const formatted = `${key}=${formatEnvValue(value)}`
+    if (presentKeys.has(key)) {
+      const script = `s|^${key}=.*|${escapeForSedReplacement(formatted)}|`
+      const sedArgs = process.platform === 'darwin' ? ['-i', '', script, path] : ['-i', script, path]
+      await execFileAsync('sed', sedArgs)
+      updated.push(key)
+    } else {
+      // Ensure we don't merge onto the last line if the file lacks a trailing newline
+      const prefix = !appendedBefore && original !== '' && !original.endsWith('\n') ? '\n' : ''
+      await appendFile(path, `${prefix}${formatted}\n`)
+      appendedBefore = true
+      added.push(key)
+    }
   }
 
-  const nextText = `${nextLines.join('\n').replace(/\n*$/, '\n')}`
-  await writeFile(path, nextText, 'utf8')
-
-  return { updated: Array.from(updated).sort(), added: added.sort() }
+  return { updated: updated.sort(), added: added.sort() }
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
@@ -171,8 +189,7 @@ async function main() {
     [appPath, localValues],
     [cliPath, cliValues],
   ] as const) {
-    await ensureFileExists(path)
-    const existing = await readFile(path, 'utf8')
+    const existing = await readEnvFileIfPresent(path)
     const lines = existing === '' ? [] : existing.split('\n')
     const presentKeys = new Set(
       lines
