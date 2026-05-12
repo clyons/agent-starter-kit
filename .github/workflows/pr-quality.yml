@@ -57,22 +57,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect Node.js project
+        id: node-project
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No package.json found; skipping npm quality checks. Customize this job for non-Node projects."
+          fi
+
       - name: Setup Node.js
+        if: steps.node-project.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        if: steps.node-project.outputs.present == 'true'
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Lint
+        if: steps.node-project.outputs.present == 'true'
         run: npm run lint
 
       - name: Type check
+        if: steps.node-project.outputs.present == 'true'
         run: npx tsc --noEmit
 
       - name: Build
+        if: steps.node-project.outputs.present == 'true'
         run: npm run build
 
       # Add your own test/eval step here, for example:
