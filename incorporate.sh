@@ -26,10 +26,23 @@ if [ -z "$TARGET" ]; then
   exit 1
 fi
 
-if [ ! -d "$TARGET/.git" ]; then
-  echo "Error: $TARGET is not a git repository."
+if ! TARGET_ABS="$(cd "$TARGET" 2>/dev/null && pwd -P)"; then
+  echo "Error: $TARGET does not exist or is not accessible."
   exit 1
 fi
+
+if ! GIT_ROOT="$(git -C "$TARGET_ABS" rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "Error: $TARGET is not a git repository or worktree."
+  exit 1
+fi
+
+if [ "$GIT_ROOT" != "$TARGET_ABS" ]; then
+  echo "Error: $TARGET is inside a git repository, but is not the repository or worktree root."
+  echo "       Use: $GIT_ROOT"
+  exit 1
+fi
+
+TARGET="$TARGET_ABS"
 
 SOURCE="$(cd "$(dirname "$0")" && pwd)"
 echo "Source: $SOURCE"
