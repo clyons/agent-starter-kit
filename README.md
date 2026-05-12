@@ -47,7 +47,7 @@ This replaces `{{REPO_NAME}}` everywhere, wires up git hooks, and prints a check
 
 ## Adding to an existing repo
 
-Clone this kit, then run `incorporate.sh` pointing at your existing repo:
+Clone this kit, then run `incorporate.sh` pointing at your existing repo or git worktree root:
 
 ```bash
 git clone git@github.com:clyons/agent-starter-kit.git
@@ -61,6 +61,8 @@ This copies all files into your repo without overwriting existing ones. Then:
 cd /path/to/your/existing-repo
 bash setup.sh
 ```
+
+`setup.sh` replaces `{{REPO_NAME}}` with the basename of the `origin` remote URL, such as `your-repo` from `git@github.com:your-org/your-repo.git`. If `origin` is unset, it falls back to the current directory name. This means worktrees and custom checkout directories still use the actual repository name.
 
 If you already have `AGENTS.md` or `CLAUDE.md`, `incorporate.sh` will skip them and tell you to merge manually. The key sections to add from this kit are:
 
