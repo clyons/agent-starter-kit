@@ -8,6 +8,7 @@ Bring your own runtime, framework, and deploy target. This kit gives you:
 - **PR quality gates** — enforces ExecPlan links and Validation Evidence in every PR
 - **ExecPlan system** — structured execution plans for multi-hour work
 - **1Password secret sync** — publish and refresh dev secrets across machines
+- **Conductor workspace setup** — safe `.env.local` symlink setup for parallel worktrees
 - **Git hooks** — post-merge cache buster for dev servers on `:3000`
 - **Agent guidance** — `AGENTS.md` and `CLAUDE.md` skeleton for AI coding assistants
 
@@ -84,6 +85,8 @@ bash incorporate.sh /path/to/your/existing-repo --overwrite
 
 Runs after every PR merge. Detects commits that were pushed to the branch after the PR was squash-merged — they'd otherwise be silently lost. Opens a GitHub issue if any are found.
 
+Also runs when commits are pushed to non-`main` branches. If the branch belongs to an already-merged PR, it reports only commits that are not reachable from the merged PR head or `origin/main`.
+
 ### `.github/workflows/pr-quality.yml`
 
 Runs on every PR to `main`. Two jobs:
@@ -145,6 +148,10 @@ If using a Node.js project, add to `package.json`:
 Clears the `.next` cache and restarts the dev server on `:3000` after every `git pull` or merge. Assumes a Node.js project with `npm run dev`. Modify the cache directory and dev command for your stack.
 
 Activated by `setup.sh` via `git config core.hooksPath .githooks`.
+
+### `conductor.json` and `scripts/conductor-setup.sh`
+
+Configures Conductor workspace setup. New workspaces share the root checkout's `.env.local` via symlink, but the setup script refuses to overwrite divergent workspace secrets. If a workspace already has a real `.env.local` with identical content, it replaces that file with the symlink. If the file differs, setup exits with a warning so you can inspect it manually.
 
 ---
 

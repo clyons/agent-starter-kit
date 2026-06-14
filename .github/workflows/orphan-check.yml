@@ -4,32 +4,58 @@ on:
   pull_request:
     branches: [main]
     types: [closed]
+  push:
+    branches-ignore: [main]
 
 permissions:
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   check-orphans:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Check for orphaned commits on merged branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REPO: ${{ github.repository }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
-            echo "PR branch is from fork $HEAD_REPO; base repository branch cleanup does not apply."
-            exit 0
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+              echo "PR branch is from fork $HEAD_REPO; base repository branch cleanup does not apply."
+              exit 0
+            fi
+          else
+            PR_NUMBER=$(gh pr list \
+              --state merged \
+              --head "$HEAD_BRANCH" \
+              --json number,mergedAt \
+              --limit 20 \
+              --jq 'sort_by(.mergedAt) | last | .number // empty')
+
+            if [ -z "$PR_NUMBER" ]; then
+              echo "No merged PR found for branch $HEAD_BRANCH; no orphan check needed."
+              exit 0
+            fi
+
+            HEAD_SHA=$(gh pr view "$PR_NUMBER" --json commits --jq '.commits[-1].oid // empty')
+            if [ -z "$HEAD_SHA" ]; then
+              echo "::warning::Could not determine merged PR head for PR #$PR_NUMBER; skipping orphan check."
+              exit 0
+            fi
+
+            echo "Checking branch $HEAD_BRANCH against merged PR #$PR_NUMBER head $HEAD_SHA."
           fi
 
           git fetch origin +refs/heads/main:refs/remotes/origin/main
@@ -69,6 +95,11 @@ jobs:
           ORPHAN_COUNT=$(echo "$ORPHANS" | wc -l | tr -d ' ')
           echo "::warning::Found $ORPHAN_COUNT orphaned commit(s) on $HEAD_BRANCH"
           echo "$ORPHANS"
+
+          gh label create orphaned-work \
+            --description "Commits left on a branch after PR merge" \
+            --color FBCA04 \
+            --force
 
           # Open an issue
           BODY=$(cat <<EOF2

@@ -71,7 +71,9 @@ copy_file "$SOURCE/.github/pull_request_template.md"          ".github/pull_requ
 copy_file "$SOURCE/.agent/PLANS.md"                           ".agent/PLANS.md"
 copy_file "$SOURCE/.agent/execplans/TEMPLATE.md"              ".agent/execplans/TEMPLATE.md"
 copy_file "$SOURCE/.agent/execplans/README.md"                ".agent/execplans/README.md"
+copy_file "$SOURCE/conductor.json"                            "conductor.json"
 copy_file "$SOURCE/.githooks/post-merge"                      ".githooks/post-merge"
+copy_file "$SOURCE/scripts/conductor-setup.sh"                "scripts/conductor-setup.sh"
 copy_file "$SOURCE/scripts/publish-1password-secrets.ts"      "scripts/publish-1password-secrets.ts"
 copy_file "$SOURCE/scripts/refresh-1password-secrets.ts"      "scripts/refresh-1password-secrets.ts"
 copy_file "$SOURCE/docs/operations/1password-env-sync.md"     "docs/operations/1password-env-sync.md"
@@ -87,6 +89,7 @@ for f in AGENTS.md CLAUDE.md; do
 done
 
 chmod +x "$TARGET/.githooks/post-merge"
+chmod +x "$TARGET/scripts/conductor-setup.sh"
 
 echo ""
 echo "Now run setup.sh from within $TARGET:"

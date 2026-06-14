@@ -16,8 +16,9 @@
  */
 
 import { execFile } from 'node:child_process'
-import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -39,6 +40,20 @@ interface Summary {
   created: boolean
   upserted: string[]
   skipped: string[]
+}
+
+interface OpField {
+  label?: string
+  type?: string
+  value?: string
+  [key: string]: unknown
+}
+
+interface OpItemTemplate {
+  title?: string
+  category?: string
+  fields?: OpField[]
+  [key: string]: unknown
 }
 
 function parseArgs(argv: string[]): Args {
@@ -89,17 +104,73 @@ async function parseEnvFile(path: string): Promise<Record<string, string>> {
   return result
 }
 
-async function itemExists(item: string): Promise<boolean> {
+async function readItem(item: string): Promise<OpItemTemplate | undefined> {
   try {
-    await execFileAsync('op', ['item', 'get', item, '--format', 'json'], { maxBuffer: 10 * 1024 * 1024 })
-    return true
+    const { stdout } = await execFileAsync('op', ['item', 'get', item, '--format', 'json'], {
+      maxBuffer: 10 * 1024 * 1024,
+    })
+    return JSON.parse(stdout) as OpItemTemplate
   } catch {
-    return false
+    return undefined
   }
 }
 
-function buildFieldArgs(fields: Record<string, string>): string[] {
-  return Object.entries(fields).map(([key, value]) => `${key}[text]=${value}`)
+function buildField(label: string, value: string): OpField {
+  return { label, type: 'STRING', value }
+}
+
+function isManagedField(field: OpField): boolean {
+  return typeof field.label === 'string' && (field.label.startsWith('local.') || field.label.startsWith('cli.'))
+}
+
+function buildCreateTemplate(item: string, fields: Record<string, string>): OpItemTemplate {
+  return {
+    title: item,
+    category: 'SECURE_NOTE',
+    fields: Object.entries(fields).map(([label, value]) => buildField(label, value)),
+  }
+}
+
+function mergeFieldsIntoTemplate(
+  existing: OpItemTemplate,
+  fields: Record<string, string>,
+  prune: boolean,
+): OpItemTemplate {
+  const next = JSON.parse(JSON.stringify(existing)) as OpItemTemplate
+  const targetLabels = new Set(Object.keys(fields))
+  const existingFields = Array.isArray(next.fields) ? next.fields : []
+  next.fields = prune
+    ? existingFields.filter((field) => !isManagedField(field) || (field.label && targetLabels.has(field.label)))
+    : existingFields
+
+  const fieldsByLabel = new Map<string, OpField>()
+  for (const field of next.fields) {
+    if (typeof field.label === 'string') fieldsByLabel.set(field.label, field)
+  }
+
+  for (const [label, value] of Object.entries(fields)) {
+    const field = fieldsByLabel.get(label)
+    if (field) {
+      field.value = value
+      if (!field.type) field.type = 'STRING'
+    } else {
+      next.fields.push(buildField(label, value))
+    }
+  }
+
+  return next
+}
+
+async function withTemplateFile(template: OpItemTemplate, fn: (path: string) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'op-item-template-'))
+  const path = join(dir, 'item.json')
+
+  try {
+    await writeFile(path, `${JSON.stringify(template, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+    await fn(path)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
@@ -138,24 +209,22 @@ async function main() {
   }
 
   if (!args.dryRun) {
-    const exists = await itemExists(args.item)
+    const existing = await readItem(args.item)
 
-    if (!exists) {
+    if (!existing) {
       console.log(`\nCreating item: ${args.item}`)
-      await execFileAsync('op', [
-        'item', 'create',
-        '--category', 'Secure Note',
-        '--title', args.item,
-        ...buildFieldArgs(fields),
-      ])
+      const template = buildCreateTemplate(args.item, fields)
+      await withTemplateFile(template, async (path) => {
+        await execFileAsync('op', ['item', 'create', '--template', path])
+      })
       summary.created = true
     } else {
       console.log(`\nUpserting into existing item: ${args.item}`)
-      if (upserted.length > 0) {
-        await execFileAsync('op', [
-          'item', 'edit', args.item,
-          ...buildFieldArgs(fields),
-        ])
+      if (upserted.length > 0 || args.prune) {
+        const template = mergeFieldsIntoTemplate(existing, fields, args.prune)
+        await withTemplateFile(template, async (path) => {
+          await execFileAsync('op', ['item', 'edit', args.item, '--template', path])
+        })
       }
     }
 
