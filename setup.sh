@@ -30,7 +30,7 @@ sed_in_place() {
 echo "Replacing {{REPO_NAME}} with '$REPO_NAME'..."
 
 find . \
-  \( -name '*.md' -o -name '*.yml' -o -name '*.yaml' -o -name '*.sh' -o -name '*.ts' \) \
+  \( -name '*.md' -o -name '*.yml' -o -name '*.yaml' -o -name '*.json' -o -name '*.sh' -o -name '*.ts' \) \
   -not -path './.git/*' \
   -not -path './node_modules/*' | while read -r file; do
     if grep -q '{{REPO_NAME}}' "$file" 2>/dev/null; then

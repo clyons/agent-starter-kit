@@ -85,9 +85,9 @@ Expected behavior:
    - `_`
 6. Check whether `op item get "dev:<repo-name>" --format json` exists.
 7. If the item does not exist:
-   - create it from the merged env map.
+   - create it from the merged env map using a temporary JSON item template.
 8. If the item exists:
-   - upsert keys from the merged env map into the existing item.
+   - fetch the existing item JSON, upsert keys in memory, then edit it using a temporary JSON item template.
 9. Do not delete unknown existing fields from the 1Password item unless an explicit `--prune` mode is requested.
 10. Write a JSON report to `.context/`.
 
@@ -205,6 +205,7 @@ Your formatter should:
 - Never overwrite `.env.local` using heredoc, redirect, or full-file write.
 - Never delete unrelated existing lines from env files.
 - Never assume the worktree file is the real file; resolve symlinks first.
+- Never pass secret values to `op` as assignment-statement command arguments; use JSON templates so values are not exposed in process listings.
 - Fail clearly if `op` is not installed or not authenticated.
 - Support `--dry-run` for both directions.
 - Record what changed in `.context/` artifacts.
