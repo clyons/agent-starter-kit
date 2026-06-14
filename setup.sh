@@ -15,6 +15,17 @@ fi
 
 echo "Repo name: $REPO_NAME"
 
+sed_in_place() {
+  local expr="$1"
+  local file="$2"
+
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$expr" "$file"
+  else
+    sed -i '' "$expr" "$file"
+  fi
+}
+
 # --- Replace {{REPO_NAME}} placeholder ---
 echo "Replacing {{REPO_NAME}} with '$REPO_NAME'..."
 
@@ -23,7 +34,7 @@ find . \
   -not -path './.git/*' \
   -not -path './node_modules/*' | while read -r file; do
     if grep -q '{{REPO_NAME}}' "$file" 2>/dev/null; then
-      sed -i '' "s/{{REPO_NAME}}/$REPO_NAME/g" "$file"
+      sed_in_place "s/{{REPO_NAME}}/$REPO_NAME/g" "$file"
       echo "  updated: $file"
     fi
   done
